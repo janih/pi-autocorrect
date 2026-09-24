@@ -1,0 +1,17 @@
+{
+	"name": "pi-dev-autocorrect",
+	"version": "0.1.0",
+	"description": "British-English spell checker / autocorrector extension for the pi coding agent",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"test": "node test/spellcheck.test.mjs",
+		"update-dicts": "node tools/update-tech-dict.mjs",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@types/node": "^24.0.0",
+		"@earendil-works/pi-coding-agent": "*",
+		"typescript": "^5.6.0"
+	}
+}

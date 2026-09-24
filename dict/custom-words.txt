@@ -1,0 +1,28 @@
+# Custom words for pi-dev-autocorrect (hand-maintained, checked into the repo).
+# Project- and tool-specific vocabulary that is neither in the British
+# dictionary nor in the generated tech-words.txt.
+pi
+jiti
+earendil
+autocorrect
+autocorrects
+autocorrected
+autocorrecting
+spellcheck
+spellchecks
+spellchecked
+spellchecker
+spellcheckers
+cspell
+hunspell
+aspell
+wordlist
+wordlists
+damerau
+levenshtein
+levenshteins
+tokenizer
+tokenizers
+subagent
+subagents
+skillfile
