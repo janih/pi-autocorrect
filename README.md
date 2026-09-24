@@ -1,4 +1,4 @@
-# pi-dev-autocorrect
+# pi-autocorrect
 
 A British-English spell checker / autocorrector for the [pi coding agent](https://github.com/earendil-works/pi).
 
@@ -60,13 +60,13 @@ Refresh the tech dictionary with `npm run update-dicts`.
 During development:
 
 ```bash
-pi -e /path/to/pi-dev-autocorrect
+pi -e /path/to/pi-autocorrect
 ```
 
 Install permanently by linking it into your user extensions directory:
 
 ```bash
-ln -s /path/to/pi-dev-autocorrect ~/.pi/agent/extensions/pi-dev-autocorrect
+ln -s /path/to/pi-autocorrect ~/.pi/agent/extensions/pi-autocorrect
 ```
 
 ## Development

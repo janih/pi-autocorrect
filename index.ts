@@ -1,5 +1,5 @@
 /**
- * pi-dev-autocorrect — British-English spell checker / autocorrector for pi.
+ * pi-autocorrect — British-English spell checker / autocorrector for pi.
  *
  * Checks every prompt before it is sent and can:
  *   warn — show possible spelling mistakes (default)
@@ -17,7 +17,7 @@
  *   /spell-add <word…>  add words to your personal dictionary
  *   /spell-remove <word…>
  *
- * Load with:  pi -e /path/to/pi-dev-autocorrect
+ * Load with:  pi -e /path/to/pi-autocorrect
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";

@@ -1,5 +1,5 @@
 /**
- * Dictionary loading for pi-dev-autocorrect.
+ * Dictionary loading for pi-autocorrect.
  *
  * Pure Node — no dependency on the pi runtime, so it can be unit-tested
  * directly with `node --test`.

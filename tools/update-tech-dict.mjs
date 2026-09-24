@@ -28,7 +28,7 @@ const SOURCES = [
 	["companies", ["companies/src/companies.txt"]],
 ];
 
-const HEADER = `# Technical word list for pi-dev-autocorrect.
+const HEADER = `# Technical word list for pi-autocorrect.
 # GENERATED FILE — do not edit by hand; run \`npm run update-dicts\` instead.
 # Derived from https://github.com/streetsidesoftware/cspell-dicts (MIT license).
 # Hand-picked personal additions belong in dict/custom-words.txt.

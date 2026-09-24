@@ -1,5 +1,5 @@
 /**
- * Spell-checking engine for pi-dev-autocorrect.
+ * Spell-checking engine for pi-autocorrect.
  *
  * Code-aware tokenizer + Damerau-Levenshtein suggestion engine.
  * Pure TypeScript — no dependency on the pi runtime.

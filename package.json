@@ -1,5 +1,5 @@
 {
-	"name": "pi-dev-autocorrect",
+	"name": "pi-autocorrect",
 	"version": "0.1.0",
 	"description": "British-English spell checker / autocorrector extension for the pi coding agent",
 	"private": true,

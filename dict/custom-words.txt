@@ -1,4 +1,4 @@
-# Custom words for pi-dev-autocorrect (hand-maintained, checked into the repo).
+# Custom words for pi-autocorrect (hand-maintained, checked into the repo).
 # Project- and tool-specific vocabulary that is neither in the British
 # dictionary nor in the generated tech-words.txt.
 pi
