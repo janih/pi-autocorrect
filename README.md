@@ -46,7 +46,7 @@ compounds per part (`well-known`), and suggestions preserve your casing
 
 | File                    | Contents                                                        |
 | ----------------------- | --------------------------------------------------------------- |
-| `dict/british-english`  | Standard British word list (~73k words)                          |
+| `dict/british-english`  | Standard British word list (~73k words) — **not in git**; provide it yourself (e.g. the [english-words](https://github.com/dwyl/english-words) list or `wbritish` from `apt install wbritish`), saved as `dict/british-english` |
 | `dict/tech-words.txt`   | **Generated** — technical vocabulary merged from [cspell-dicts](https://github.com/streetsidesoftware/cspell-dicts) (MIT): software terms, git, docker, node, typescript, python, golang, shell, aws, companies |
 | `dict/custom-words.txt` | Hand-maintained project/tool vocabulary                          |
 
