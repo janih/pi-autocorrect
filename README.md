@@ -79,3 +79,10 @@ npm run typecheck  # tsc --noEmit
 
 The checking engine (`lib/`) is dependency-free TypeScript, so tests run with
 Node's native type stripping — no build step.
+
+## License
+
+[MIT](LICENSE). The generated `dict/tech-words.txt` merges vocabulary from
+[cspell-dicts](https://github.com/streetsidesoftware/cspell-dicts) (MIT); the
+optional `dict/british-english` word list is user-provided and not distributed
+with this project.
