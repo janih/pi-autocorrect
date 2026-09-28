@@ -11,7 +11,7 @@ mistakes, fixes them automatically, or asks for confirmation — your choice.
 | ------ | ------------------------------------------------------------------------- |
 | `warn` | Show possible mistakes with suggestions; send the prompt unchanged (default) |
 | `fix`  | Auto-apply *confident* corrections and report what was changed            |
-| `ask`  | Show a picker for each misspelled word before sending                     |
+| `ask`  | Show a picker for each misspelled word before sending (pick a suggestion, type your own correction, or keep the original) |
 | `off`  | Disabled (status bar shows nothing)                                       |
 
 "Confident" fixes must win their (edit-distance, word-length) group outright,

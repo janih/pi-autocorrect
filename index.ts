@@ -37,6 +37,8 @@ import { applyFixes, checkText, confidentFixes, unresolvedIssues } from "./lib/s
 type Mode = "off" | "warn" | "fix" | "ask";
 const MODES: Mode[] = ["off", "warn", "fix", "ask"];
 const DEFAULT_MODE: Mode = "warn";
+const TYPE_OWN = "type a correction…";
+const KEEP_ORIGINAL = "keep original";
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-autocorrect.json");
 
 interface Config {
@@ -129,9 +131,12 @@ export default function autocorrectExtension(pi: ExtensionAPI): void {
 			const fixes: Fix[] = [];
 			const MAX_ASK = 8;
 			for (const issue of issues.slice(0, MAX_ASK)) {
-				const options = [...issue.suggestions.slice(0, 4), "keep original"];
-				const choice = await ctx.ui.select(`"${issue.word}"`, options);
-				if (choice && choice !== "keep original") {
+				const options = [...issue.suggestions.slice(0, 4), TYPE_OWN, KEEP_ORIGINAL];
+				let choice = await ctx.ui.select(`"${issue.word}"`, options);
+				if (choice === TYPE_OWN) {
+					choice = (await ctx.ui.input(`Replace "${issue.word}" with:`, issue.word))?.trim();
+				}
+				if (choice && choice !== KEEP_ORIGINAL && choice !== issue.word) {
 					fixes.push({ start: issue.start, end: issue.end, original: issue.word, replacement: choice });
 				}
 			}
