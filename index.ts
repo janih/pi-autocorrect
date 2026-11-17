@@ -27,8 +27,19 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 import type { Dictionary } from "./lib/dictionary.ts";
 import { loadDictionary } from "./lib/dictionary.ts";
-import type { Fix, Issue } from "./lib/spellcheck.ts";
-import { applyFixes, checkText, confidentFixes, expandFix, groupIssues, unresolvedIssues } from "./lib/spellcheck.ts";
+import type { Fix, Issue, Repetition, RepetitionGroup } from "./lib/spellcheck.ts";
+import {
+	applyFixes,
+	checkText,
+	confidentFixes,
+	expandFix,
+	findRepetitions,
+	groupIssues,
+	groupRepetitions,
+	repetitionFix,
+	repetitionGroupLabel,
+	unresolvedIssues,
+} from "./lib/spellcheck.ts";
 
 // ---------------------------------------------------------------------------
 // Configuration (persisted in ~/.pi/agent/pi-autocorrect.json)
@@ -39,6 +50,7 @@ const MODES: Mode[] = ["off", "warn", "fix", "ask"];
 const DEFAULT_MODE: Mode = "warn";
 const TYPE_OWN = "type a correction…";
 const KEEP_ORIGINAL = "keep original";
+const USE_ONCE = "use it once";
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-autocorrect.json");
 
 interface Config {
@@ -118,6 +130,17 @@ function summarizeFixes(fixes: Fix[]): string {
 	return parts.join(", ");
 }
 
+function summarizeRepetitions(groups: RepetitionGroup[]): string {
+	const parts = groups.slice(0, MAX_REPORT).map(repetitionGroupLabel);
+	if (groups.length > MAX_REPORT) parts.push(`+${groups.length - MAX_REPORT} more`);
+	return parts.join(", ");
+}
+
+/** Warning line for repeated words: "Repeated words: the ×2, and ×2 in 2 places" */
+function repeatedWordsNotice(reps: Repetition[]): string {
+	return `Repeated words: ${summarizeRepetitions(groupRepetitions(reps))}`;
+}
+
 // ---------------------------------------------------------------------------
 // The extension
 // ---------------------------------------------------------------------------
@@ -133,11 +156,20 @@ export default function autocorrectExtension(pi: ExtensionAPI): void {
 	pi.on("session_start", (_event, ctx) => setStatus(ctx.ui));
 	pi.on("session_shutdown", (_event, ctx) => ctx.ui?.setStatus("spell", undefined));
 
+	/**
+	 * Spelling issues plus repeated words. A misspelled repeat is left to the
+	 * spelling pass: collapsing "tha tha" would guess at the intended meaning.
+	 */
+	const analyze = (text: string): { issues: Issue[]; reps: Repetition[] } => {
+		const issues = checkText(text, ensureDictionary());
+		const flagged = new Set(issues.map((i) => i.word.toLowerCase()));
+		return { issues, reps: findRepetitions(text, flagged) };
+	};
+
 	/** Warn / fix / ask handling for one input text. Returns transformed text or undefined. */
 	const processText = async (text: string, ctx: Pick<ExtensionContext, "hasUI" | "ui">): Promise<string | undefined> => {
-		const dict = ensureDictionary();
-		const issues = checkText(text, dict);
-		if (issues.length === 0) return undefined;
+		const { issues, reps } = analyze(text);
+		if (issues.length === 0 && reps.length === 0) return undefined;
 
 		const interactive = ctx.hasUI && config.mode === "ask";
 
@@ -147,7 +179,9 @@ export default function autocorrectExtension(pi: ExtensionAPI): void {
 			const groups = groupIssues(issues);
 			const fixes: Fix[] = [];
 			const MAX_ASK = 8;
-			for (const group of groups.slice(0, MAX_ASK)) {
+			const asked = groups.slice(0, MAX_ASK);
+			let beyond = groups.length - asked.length;
+			for (const group of asked) {
 				const options = [...group.suggestions.slice(0, 4), TYPE_OWN, KEEP_ORIGINAL];
 				let choice = await ctx.ui.select(`"${group.word}"${times(group.occurrences.length)}`, options);
 				if (choice === TYPE_OWN) {
@@ -157,8 +191,17 @@ export default function autocorrectExtension(pi: ExtensionAPI): void {
 					fixes.push(...expandFix(group, choice, group.suggestions.includes(choice)));
 				}
 			}
-			if (groups.length > MAX_ASK) {
-				ctx.ui.notify(`Spell check: ${groups.length - MAX_ASK} more words beyond the first ${MAX_ASK}`, "warning");
+			const repSlots = Math.max(0, MAX_ASK - asked.length);
+			const repGroups = groupRepetitions(reps);
+			beyond += Math.max(0, repGroups.length - repSlots);
+			for (const group of repGroups.slice(0, repSlots)) {
+				const question = `Repeated word ${repetitionGroupLabel(group)}`;
+				if ((await ctx.ui.select(question, [USE_ONCE, KEEP_ORIGINAL])) === USE_ONCE) {
+					fixes.push(...group.runs.map(repetitionFix));
+				}
+			}
+			if (beyond > 0) {
+				ctx.ui.notify(`Spell check: ${beyond} more issues beyond the first ${MAX_ASK}`, "warning");
 			}
 			if (fixes.length === 0) return undefined;
 			ctx.ui.notify(`Spell check: ${summarizeFixes(fixes)}`, "info");
@@ -167,7 +210,8 @@ export default function autocorrectExtension(pi: ExtensionAPI): void {
 
 		if (config.mode === "fix" || config.mode === "ask") {
 			// Fix mode (or ask mode without UI / mid-stream): apply confident fixes.
-			const fixes = confidentFixes(issues);
+			// Repeated words are safe to collapse outright (see VALID_REPEAT_WORDS).
+			const fixes = [...confidentFixes(issues), ...reps.map(repetitionFix)];
 			const unresolved = unresolvedIssues(issues, fixes);
 			if (fixes.length > 0) {
 				ctx.ui.notify(`Autocorrected ${fixes.length}: ${summarizeFixes(fixes)}`, "info");
@@ -179,7 +223,12 @@ export default function autocorrectExtension(pi: ExtensionAPI): void {
 		}
 
 		// Warn mode.
-		ctx.ui.notify(`Possible spelling (${countIssues(issues)}): ${summarizeIssues(issues)}`, "warning");
+		if (issues.length > 0) {
+			ctx.ui.notify(`Possible spelling (${countIssues(issues)}): ${summarizeIssues(issues)}`, "warning");
+		}
+		if (reps.length > 0) {
+			ctx.ui.notify(repeatedWordsNotice(reps), "warning");
+		}
 		return undefined;
 	};
 
@@ -205,15 +254,19 @@ export default function autocorrectExtension(pi: ExtensionAPI): void {
 				ctx.ui.notify("Editor is empty — nothing to check.", "info");
 				return;
 			}
-			const dict = ensureDictionary();
-			const issues = checkText(text, dict);
-			if (issues.length === 0) {
+			const { issues, reps } = analyze(text);
+			if (issues.length === 0 && reps.length === 0) {
 				ctx.ui.notify("Spell check: no issues found.", "info");
 				return;
 			}
-			ctx.ui.notify(`Spell check (${countIssues(issues)}): ${summarizeIssues(issues)}`, "warning");
+			if (issues.length > 0) {
+				ctx.ui.notify(`Spell check (${countIssues(issues)}): ${summarizeIssues(issues)}`, "warning");
+			}
+			if (reps.length > 0) {
+				ctx.ui.notify(repeatedWordsNotice(reps), "warning");
+			}
 
-			const fixes = confidentFixes(issues);
+			const fixes = [...confidentFixes(issues), ...reps.map(repetitionFix)];
 			if (fixes.length > 0 && (await ctx.ui.confirm("Apply corrections?", summarizeFixes(fixes)))) {
 				ctx.ui.setEditorText(applyFixes(text, fixes));
 			}

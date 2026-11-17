@@ -47,6 +47,27 @@ export interface IssueGroup {
 	occurrences: Occurrence[];
 }
 
+/** A run of the same word written twice in a row: "the the the". */
+export interface Repetition {
+	/** Exact text of the first word of the run (kept when collapsing). */
+	word: string;
+	/** Start of the first word, end of the last word of the run. */
+	start: number;
+	end: number;
+	/** How many times the word appears in the run (>= 2). */
+	count: number;
+}
+
+/** Every run of the same repeated word, so the user is asked once per word. */
+export interface RepetitionGroup {
+	/** Exact text of the first run's first word. */
+	word: string;
+	/** All runs of this word, in document order. */
+	runs: Repetition[];
+	/** Total occurrences across the runs. */
+	count: number;
+}
+
 // ---------------------------------------------------------------------------
 // Tokenizer
 // ---------------------------------------------------------------------------
@@ -108,8 +129,10 @@ export interface Token {
 	text: string;
 	start: number;
 	end: number;
-	/** Whether this token should be checked. */
+	/** Whether this token should be checked (a plain word of at least 3 letters). */
 	check: boolean;
+	/** Plain prose word outside protected regions, of any length (also covers "a a", "an an"). */
+	plain: boolean;
 }
 
 /**
@@ -124,21 +147,17 @@ export function tokenize(text: string): Token[] {
 		const word = m[0];
 		const start = m.index;
 		const end = start + word.length;
-		const token: Token = { text: word, start, end, check: false };
+		const token: Token = { text: word, start, end, check: false, plain: false };
 
 		const prev = start > 0 ? text[start - 1] : "";
 		const next = end < text.length ? text[end] : "";
 
 		if (!inProtected(start, ranges)) {
-			if (word.length >= 3) {
-				const identifierAdjacency =
-					prev === "_" || next === "_" || prev === "/" || prev === "-" || prev === "." || next === ".";
-				const mixedCase = /[A-Z]/.test(word.slice(1));
-				const allCaps = word === word.toUpperCase(); // CONSTANT_STYLE / acronyms
-				if (!identifierAdjacency && !mixedCase && !allCaps) {
-					token.check = true;
-				}
-			}
+			const identifierAdjacency = prev === "_" || next === "_" || prev === "/" || prev === "-" || prev === "." || next === ".";
+			const mixedCase = /[A-Z]/.test(word.slice(1));
+			const allCaps = word === word.toUpperCase(); // CONSTANT_STYLE / acronyms
+			token.plain = !identifierAdjacency && !mixedCase && !allCaps;
+			token.check = token.plain && word.length >= 3;
 		}
 		tokens.push(token);
 	}
@@ -232,6 +251,89 @@ export function expandFix(group: IssueGroup, replacement: string, fromSuggestion
 		fixes.push({ start: occ.start, end: occ.end, original: occ.word, replacement: rep });
 	}
 	return fixes;
+}
+
+// ---------------------------------------------------------------------------
+// Repeated adjacent words
+// ---------------------------------------------------------------------------
+
+/**
+ * Words whose same-word run is ordinary English rather than a slip of the
+ * keys: the past perfect ("I had had enough"), "that that is…", emphatic do
+ * ("I do do my work"), the intensifier "very very", and spoken reduplications
+ * ("so so", "yes yes", "no no", "bye bye").
+ */
+const VALID_REPEAT_WORDS = new Set(["had", "that", "do", "very", "so", "yes", "no", "bye"]);
+
+/**
+ * Find runs of the same word written twice or more in a row, e.g. "the the".
+ *
+ * Comparison is case-insensitive and only spans same-line whitespace, so
+ * punctuation between the words ("yes, yes"), other tokens, and everything the
+ * tokenizer protects (code, URLs, paths, identifiers, ALL-CAPS) is left alone.
+ * Pass the words you do not want reported in `skip` (typically the words the
+ * spellchecker already flagged, whose fixes would overlap a collapse).
+ */
+export function findRepetitions(text: string, skip: Set<string> = new Set()): Repetition[] {
+	const reps: Repetition[] = [];
+	let run: Token[] = [];
+	const flush = () => {
+		if (run.length > 1) {
+			const word = run[0].text;
+			if (!VALID_REPEAT_WORDS.has(word.toLowerCase()) && !skip.has(word.toLowerCase())) {
+				reps.push({ word, start: run[0].start, end: run[run.length - 1].end, count: run.length });
+			}
+		}
+		run = [];
+	};
+
+	for (const token of tokenize(text)) {
+		if (!token.plain) continue;
+		const prev = run[run.length - 1];
+		const gap = prev ? text.slice(prev.end, token.start) : "";
+		const adjacent = prev !== undefined && /^[ \t]+$/.test(gap) && token.text.toLowerCase() === prev.text.toLowerCase();
+		if (!adjacent) flush();
+		run.push(token);
+	}
+	flush();
+	return reps;
+}
+
+/** How a repetition is named in reports and prompts: "the the", "the ×4". */
+export function repetitionLabel(rep: Repetition): string {
+	return rep.count === 2 ? `${rep.word} ${rep.word}` : `${rep.word} ×${rep.count}`;
+}
+
+/**
+ * Group runs by repeated word (case-insensitively, order of first run), so a
+ * single question can collapse every "the the" in the text at once.
+ */
+export function groupRepetitions(reps: Repetition[]): RepetitionGroup[] {
+	const groups: RepetitionGroup[] = [];
+	const byWord = new Map<string, RepetitionGroup>();
+	for (const rep of reps) {
+		const key = rep.word.toLowerCase();
+		let group = byWord.get(key);
+		if (!group) {
+			group = { word: rep.word, runs: [], count: 0 };
+			byWord.set(key, group);
+			groups.push(group);
+		}
+		group.runs.push(rep);
+		group.count += rep.count;
+	}
+	return groups;
+}
+
+/** "\"the\" ×2", or "\"the\" ×6 in 3 places" when the word repeats in several spots. */
+export function repetitionGroupLabel(group: RepetitionGroup): string {
+	const places = group.runs.length > 1 ? ` in ${group.runs.length} places` : "";
+	return `"${group.word}" ×${group.count}${places}`;
+}
+
+/** Collapse a repetition to a single copy of its first word. */
+export function repetitionFix(rep: Repetition): Fix {
+	return { start: rep.start, end: rep.end, original: repetitionLabel(rep), replacement: rep.word };
 }
 
 // ---------------------------------------------------------------------------
@@ -373,11 +475,18 @@ export function unresolvedIssues(issues: Issue[], fixes: Fix[]): Issue[] {
 	return issues.filter((i) => !fixed.has(`${i.start}:${i.end}`));
 }
 
-/** Apply fixes to text. Fixes must not overlap. */
+/** Apply fixes to text. Overlapping fixes are dropped (first one wins). */
 export function applyFixes(text: string, fixes: Fix[]): string {
-	const sorted = [...fixes].sort((a, b) => b.start - a.start);
+	const ascending = [...fixes].sort((a, b) => a.start - b.start || b.end - a.end);
+	const kept: Fix[] = [];
+	let lastEnd = -1;
+	for (const fix of ascending) {
+		if (fix.start < lastEnd) continue; // would clobber an accepted fix
+		kept.push(fix);
+		lastEnd = fix.end;
+	}
 	let result = text;
-	for (const fix of sorted) {
+	for (const fix of kept.reverse()) {
 		result = result.slice(0, fix.start) + fix.replacement + result.slice(fix.end);
 	}
 	return result;

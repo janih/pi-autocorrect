@@ -12,7 +12,12 @@ import {
 	confidentFixes,
 	editDistance,
 	expandFix,
+	findRepetitions,
 	groupIssues,
+	groupRepetitions,
+	repetitionFix,
+	repetitionLabel,
+	repetitionGroupLabel,
 	suggest,
 	tokenize,
 	unresolvedIssues,
@@ -183,4 +188,78 @@ test("expandFix keeps hand-typed replacements verbatim", () => {
 	assert.equal(applyFixes(text, expandFix(group, "Receive", false)), "Receive it, then Receive it again");
 	// A choice taken from the suggestion list is re-cased per occurrence.
 	assert.equal(applyFixes(text, expandFix(group, "receive")), "receive it, then Receive it again");
+});
+
+test("repeated adjacent words collapse to one copy", () => {
+	const text = "I saw the the the cat and and a dog";
+	const reps = findRepetitions(text);
+	assert.deepEqual(
+		reps.map((r) => [r.word, r.count]),
+		[
+			["the", 3],
+			["and", 2],
+		],
+	);
+	assert.equal(applyFixes(text, reps.map(repetitionFix)), "I saw the cat and a dog");
+});
+
+test("repetition matching ignores case but keeps the first word's casing", () => {
+	const text = "The the book";
+	const reps = findRepetitions(text);
+	assert.equal(reps.length, 1);
+	assert.equal(applyFixes(text, reps.map(repetitionFix)), "The book");
+});
+
+test("short repeated words are caught even though they are not spell-checked", () => {
+	assert.equal(findRepetitions("give it an an hour").length, 1);
+});
+
+test("valid same-word sequences and non-adjacent repeats are left alone", () => {
+	for (const text of [
+		"I had had enough of that",
+		"that that is true",
+		"this is very very good",
+		"yes, yes I know", // punctuation between
+		"the other the same",
+		"wrapped lines the\nthe keep it",
+		"run `the the` in your shell", // code span
+	]) {
+		assert.deepEqual(findRepetitions(text), [], `should skip: ${text}`);
+	}
+	// Same words inside a fenced block are protected too.
+	assert.deepEqual(findRepetitions("```\nthe the\n```"), []);
+});
+
+test("findRepetitions skips the words you hand it", () => {
+	assert.equal(findRepetitions("tha tha tha").length, 1);
+	assert.equal(findRepetitions("tha tha tha", new Set(["tha"])).length, 0);
+});
+
+test("repetitionLabel reads well for pairs and longer runs", () => {
+	assert.equal(repetitionLabel({ word: "the", start: 0, end: 7, count: 2 }), "the the");
+	assert.equal(repetitionLabel({ word: "the", start: 0, end: 13, count: 4 }), "the ×4");
+});
+
+test("repeated runs of the same word are grouped into one question", () => {
+	const groups = groupRepetitions(findRepetitions("the the cat and and the the dog and the"));
+	assert.deepEqual(
+		groups.map((g) => [repetitionGroupLabel(g), g.runs.length]),
+		[
+			['"the" ×4 in 2 places', 2],
+			['"and" ×2', 1],
+		],
+	);
+	// One decision collapses every run of that word.
+	const text = "the the cat and and the the dog and the";
+	const collapsed = applyFixes(text, groups[0].runs.map(repetitionFix));
+	assert.equal(collapsed, "the cat and and the dog and the");
+});
+
+test("applyFixes drops a fix that would overlap an accepted one", () => {
+	const text = "the the cat";
+	const collapsed = applyFixes(text, [
+		{ start: 0, end: 7, original: "the the", replacement: "the" },
+		{ start: 4, end: 7, original: "the", replacement: "cat" },
+	]);
+	assert.equal(collapsed, "the cat");
 });

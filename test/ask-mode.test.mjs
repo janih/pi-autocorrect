@@ -66,3 +66,28 @@ test("a single occurrence is not annotated with a count", async () => {
 	const { prompts } = await runAsk("one recieve here", (_q, options) => options[0]);
 	assert.deepEqual(prompts, ['"recieve"']);
 });
+
+test("ask mode offers to collapse a repeated word", async () => {
+	const { text, prompts } = await runAsk("I saw the the the cat", (_q, options) => options[0]);
+	assert.deepEqual(prompts, ['Repeated word "the" ×3']);
+	assert.equal(text, "I saw the cat");
+});
+
+test("keeping a repeated word leaves the run in place", async () => {
+	const input = "I saw the the cat";
+	const { text, prompts } = await runAsk(input, (_q, options) => options.at(-1));
+	assert.equal(prompts.length, 1);
+	assert.equal(text, input);
+});
+
+test("several runs of the same repeated word get a single question", async () => {
+	const { text, prompts } = await runAsk("give the the cat the the milk", (_q, options) => options[0]);
+	assert.deepEqual(prompts, ['Repeated word "the" ×4 in 2 places']);
+	assert.equal(text, "give the cat the milk");
+});
+
+test("a misspelled repeat goes to the spelling pass, not the collapse", async () => {
+	const { text, prompts } = await runAsk("recieve recieve it", (_q, options) => options[0]);
+	assert.deepEqual(prompts, ['"recieve" ×2']);
+	assert.equal(text, "receive receive it");
+});
