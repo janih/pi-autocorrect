@@ -182,7 +182,8 @@ export default function autocorrectExtension(pi: ExtensionAPI): void {
 			const asked = groups.slice(0, MAX_ASK);
 			let beyond = groups.length - asked.length;
 			for (const group of asked) {
-				const options = [...group.suggestions.slice(0, 4), TYPE_OWN, KEEP_ORIGINAL];
+				// "keep original" first: an accidental Enter must not rewrite a word.
+				const options = [KEEP_ORIGINAL, ...group.suggestions.slice(0, 4), TYPE_OWN];
 				let choice = await ctx.ui.select(`"${group.word}"${times(group.occurrences.length)}`, options);
 				if (choice === TYPE_OWN) {
 					choice = (await ctx.ui.input(`Replace "${group.word}" with:`, group.word))?.trim();
@@ -196,7 +197,7 @@ export default function autocorrectExtension(pi: ExtensionAPI): void {
 			beyond += Math.max(0, repGroups.length - repSlots);
 			for (const group of repGroups.slice(0, repSlots)) {
 				const question = `Repeated word ${repetitionGroupLabel(group)}`;
-				if ((await ctx.ui.select(question, [USE_ONCE, KEEP_ORIGINAL])) === USE_ONCE) {
+				if ((await ctx.ui.select(question, [KEEP_ORIGINAL, USE_ONCE])) === USE_ONCE) {
 					fixes.push(...group.runs.map(repetitionFix));
 				}
 			}

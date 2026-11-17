@@ -12,7 +12,7 @@ confirmation — your choice.
 | ------ | ------------------------------------------------------------------------- |
 | `warn` | Show possible mistakes with suggestions; send the prompt unchanged (default) |
 | `fix`  | Auto-apply *confident* corrections, collapse repeated words, and report what was changed |
-| `ask`  | Show a picker for each *distinct* misspelled word and each repeated word before sending (pick a suggestion, type your own correction, or keep the original); your choice is applied to every occurrence of that word |
+| `ask`  | Show a picker for each *distinct* misspelled word and each repeated word before sending — `keep original` is listed first, then the suggestions and `type a correction…`; an accepted choice is applied to every occurrence of that word |
 | `off`  | Disabled (status bar shows nothing)                                       |
 
 "Confident" fixes must win their (edit-distance, word-length) group outright,
