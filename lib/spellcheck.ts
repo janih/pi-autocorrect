@@ -28,6 +28,25 @@ export interface Fix {
 	replacement: string;
 }
 
+/** One appearance of a flagged word. */
+export interface Occurrence {
+	word: string;
+	start: number;
+	end: number;
+}
+
+/** All occurrences of the same flagged word, so the user is asked once per word. */
+export interface IssueGroup {
+	/** Lower-cased flagged text shared by every occurrence (the grouping key). */
+	key: string;
+	/** Exact text of the first occurrence — used for the prompt and suggestion casing. */
+	word: string;
+	/** Suggestions for the first occurrence. */
+	suggestions: string[];
+	/** Every occurrence, in document order. */
+	occurrences: Occurrence[];
+}
+
 // ---------------------------------------------------------------------------
 // Tokenizer
 // ---------------------------------------------------------------------------
@@ -160,6 +179,59 @@ export function checkText(text: string, dict: Dictionary): Issue[] {
 		});
 	}
 	return issues;
+}
+
+// ---------------------------------------------------------------------------
+// Grouping repeated words
+// ---------------------------------------------------------------------------
+
+/**
+ * Collapse issues that flag the same word into one group per distinct word,
+ * in order of first appearance. Grouping is case-insensitive but keeps the
+ * exact text of each occurrence, so a decision can be re-cased per occurrence.
+ * Words that differ only by a possessive suffix stay separate (their
+ * corrections differ too).
+ */
+export function groupIssues(issues: Issue[]): IssueGroup[] {
+	const groups: IssueGroup[] = [];
+	const byKey = new Map<string, IssueGroup>();
+	for (const issue of issues) {
+		const key = issue.word.toLowerCase();
+		let group = byKey.get(key);
+		if (!group) {
+			group = { key, word: issue.word, suggestions: issue.suggestions, occurrences: [] };
+			byKey.set(key, group);
+			groups.push(group);
+		}
+		group.occurrences.push({ word: issue.word, start: issue.start, end: issue.end });
+	}
+	return groups;
+}
+
+function startsUpper(s: string): boolean {
+	return /^[A-Z]/.test(s);
+}
+
+/**
+ * Turn one decision about a group into a fix for every occurrence.
+ *
+ * `fromSuggestions` says whether `replacement` came from the group's
+ * suggestion list (as opposed to something the user typed). Suggestions are
+ * cased after the first occurrence, so "Recieve"/"receive" pairs need the
+ * first letter re-cased; hand-typed replacements are applied verbatim to keep
+ * whatever casing the user intended.
+ */
+export function expandFix(group: IssueGroup, replacement: string, fromSuggestions = true): Fix[] {
+	const fixes: Fix[] = [];
+	for (const occ of group.occurrences) {
+		let rep = replacement;
+		if (fromSuggestions && startsUpper(occ.word) !== startsUpper(group.word)) {
+			rep = startsUpper(occ.word) ? rep.charAt(0).toUpperCase() + rep.slice(1) : rep.charAt(0).toLowerCase() + rep.slice(1);
+		}
+		if (rep === occ.word) continue; // already correct, nothing to rewrite
+		fixes.push({ start: occ.start, end: occ.end, original: occ.word, replacement: rep });
+	}
+	return fixes;
 }
 
 // ---------------------------------------------------------------------------

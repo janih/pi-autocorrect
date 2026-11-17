@@ -28,7 +28,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { Dictionary } from "./lib/dictionary.ts";
 import { loadDictionary } from "./lib/dictionary.ts";
 import type { Fix, Issue } from "./lib/spellcheck.ts";
-import { applyFixes, checkText, confidentFixes, unresolvedIssues } from "./lib/spellcheck.ts";
+import { applyFixes, checkText, confidentFixes, expandFix, groupIssues, unresolvedIssues } from "./lib/spellcheck.ts";
 
 // ---------------------------------------------------------------------------
 // Configuration (persisted in ~/.pi/agent/pi-autocorrect.json)
@@ -90,16 +90,31 @@ function ensureDictionary(): Dictionary {
 
 const MAX_REPORT = 5;
 
-/** One-line summary of issues: "recieve → receive, xyzzy (no suggestion)" */
+/** "" for a single occurrence, " ×3" when the same word appears repeatedly. */
+function times(count: number): string {
+	return count > 1 ? ` ×${count}` : "";
+}
+
+/** Total issues, plus how many distinct words they cover when they differ. */
+function countIssues(issues: Issue[]): string {
+	const distinct = groupIssues(issues).length;
+	return issues.length === distinct ? `${issues.length}` : `${issues.length} in ${distinct} words`;
+}
+
+/** One-line summary, one entry per distinct word: "recieve → receive ×2, xyzzy (?)" */
 function summarizeIssues(issues: Issue[]): string {
-	const parts = issues.slice(0, MAX_REPORT).map((i) => (i.suggestions.length > 0 ? `${i.word} → ${i.suggestions[0]}` : `${i.word} (?)`));
-	if (issues.length > MAX_REPORT) parts.push(`+${issues.length - MAX_REPORT} more`);
+	const groups = groupIssues(issues);
+	const parts = groups.slice(0, MAX_REPORT).map(
+		(g) => `${g.suggestions.length > 0 ? `${g.word} → ${g.suggestions[0]}` : `${g.word} (?)`}${times(g.occurrences.length)}`,
+	);
+	if (groups.length > MAX_REPORT) parts.push(`+${groups.length - MAX_REPORT} more`);
 	return parts.join(", ");
 }
 
 function summarizeFixes(fixes: Fix[]): string {
-	const parts = fixes.slice(0, MAX_REPORT).map((f) => `${f.original} → ${f.replacement}`);
-	if (fixes.length > MAX_REPORT) parts.push(`+${fixes.length - MAX_REPORT} more`);
+	const groups = groupIssues(fixes.map((f) => ({ word: f.original, start: f.start, end: f.end, suggestions: [f.replacement] })));
+	const parts = groups.slice(0, MAX_REPORT).map((g) => `${g.word} → ${g.suggestions[0]}${times(g.occurrences.length)}`);
+	if (groups.length > MAX_REPORT) parts.push(`+${groups.length - MAX_REPORT} more`);
 	return parts.join(", ");
 }
 
@@ -127,21 +142,23 @@ export default function autocorrectExtension(pi: ExtensionAPI): void {
 		const interactive = ctx.hasUI && config.mode === "ask";
 
 		if (interactive) {
-			// Ask mode: confirm each correction, keep anything the user declines.
+			// Ask mode: confirm one correction per distinct word and apply it to
+			// every occurrence; keep anything the user declines.
+			const groups = groupIssues(issues);
 			const fixes: Fix[] = [];
 			const MAX_ASK = 8;
-			for (const issue of issues.slice(0, MAX_ASK)) {
-				const options = [...issue.suggestions.slice(0, 4), TYPE_OWN, KEEP_ORIGINAL];
-				let choice = await ctx.ui.select(`"${issue.word}"`, options);
+			for (const group of groups.slice(0, MAX_ASK)) {
+				const options = [...group.suggestions.slice(0, 4), TYPE_OWN, KEEP_ORIGINAL];
+				let choice = await ctx.ui.select(`"${group.word}"${times(group.occurrences.length)}`, options);
 				if (choice === TYPE_OWN) {
-					choice = (await ctx.ui.input(`Replace "${issue.word}" with:`, issue.word))?.trim();
+					choice = (await ctx.ui.input(`Replace "${group.word}" with:`, group.word))?.trim();
 				}
-				if (choice && choice !== KEEP_ORIGINAL && choice !== issue.word) {
-					fixes.push({ start: issue.start, end: issue.end, original: issue.word, replacement: choice });
+				if (choice && choice !== KEEP_ORIGINAL && choice !== group.word) {
+					fixes.push(...expandFix(group, choice, group.suggestions.includes(choice)));
 				}
 			}
-			if (issues.length > MAX_ASK) {
-				ctx.ui.notify(`Spell check: ${issues.length - MAX_ASK} more issues beyond the first ${MAX_ASK}`, "warning");
+			if (groups.length > MAX_ASK) {
+				ctx.ui.notify(`Spell check: ${groups.length - MAX_ASK} more words beyond the first ${MAX_ASK}`, "warning");
 			}
 			if (fixes.length === 0) return undefined;
 			ctx.ui.notify(`Spell check: ${summarizeFixes(fixes)}`, "info");
@@ -156,13 +173,13 @@ export default function autocorrectExtension(pi: ExtensionAPI): void {
 				ctx.ui.notify(`Autocorrected ${fixes.length}: ${summarizeFixes(fixes)}`, "info");
 			}
 			if (unresolved.length > 0) {
-				ctx.ui.notify(`Possible spelling, not autocorrected (${unresolved.length}): ${summarizeIssues(unresolved)}`, "warning");
+				ctx.ui.notify(`Possible spelling, not autocorrected (${countIssues(unresolved)}): ${summarizeIssues(unresolved)}`, "warning");
 			}
 			return fixes.length > 0 ? applyFixes(text, fixes) : undefined;
 		}
 
 		// Warn mode.
-		ctx.ui.notify(`Possible spelling (${issues.length}): ${summarizeIssues(issues)}`, "warning");
+		ctx.ui.notify(`Possible spelling (${countIssues(issues)}): ${summarizeIssues(issues)}`, "warning");
 		return undefined;
 	};
 
@@ -194,7 +211,7 @@ export default function autocorrectExtension(pi: ExtensionAPI): void {
 				ctx.ui.notify("Spell check: no issues found.", "info");
 				return;
 			}
-			ctx.ui.notify(`Spell check (${issues.length}): ${summarizeIssues(issues)}`, "warning");
+			ctx.ui.notify(`Spell check (${countIssues(issues)}): ${summarizeIssues(issues)}`, "warning");
 
 			const fixes = confidentFixes(issues);
 			if (fixes.length > 0 && (await ctx.ui.confirm("Apply corrections?", summarizeFixes(fixes)))) {

@@ -6,7 +6,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { Dictionary, loadDictionary } from "../lib/dictionary.ts";
-import { applyFixes, checkText, confidentFixes, editDistance, suggest, tokenize, unresolvedIssues } from "../lib/spellcheck.ts";
+import {
+	applyFixes,
+	checkText,
+	confidentFixes,
+	editDistance,
+	expandFix,
+	groupIssues,
+	suggest,
+	tokenize,
+	unresolvedIssues,
+} from "../lib/spellcheck.ts";
 
 const dict = loadDictionary();
 
@@ -132,4 +142,45 @@ test("user words extend the dictionary", () => {
 	const d2 = new Dictionary();
 	d2.addWords(["flurble"]);
 	assert.equal(d2.has("FLURBLE"), true);
+});
+
+test("repeated words collapse into one group, in order of first appearance", () => {
+	const issues = checkText("recieve then recieve again, then separte", dict);
+	assert.equal(issues.length, 3);
+	const groups = groupIssues(issues);
+	assert.deepEqual(
+		groups.map((g) => [g.word, g.occurrences.length]),
+		[
+			["recieve", 2],
+			["separte", 1],
+		],
+	);
+});
+
+test("grouping ignores case but keeps each occurrence's exact text", () => {
+	const groups = groupIssues(checkText("Recieve here and recieve there", dict));
+	assert.equal(groups.length, 1);
+	assert.deepEqual(groups[0].occurrences.map((o) => o.word), ["Recieve", "recieve"]);
+});
+
+test("possessive forms are not merged with the plain word", () => {
+	const groups = groupIssues(checkText("the userz and userz's terminal", dict));
+	assert.deepEqual(groups.map((g) => g.word), ["userz", "userz's"]);
+});
+
+test("expandFix applies one decision to every occurrence, matching case", () => {
+	const text = "Recieve it, then recieve it again";
+	const group = groupIssues(checkText(text, dict))[0];
+	const fixes = expandFix(group, "Receive");
+	assert.equal(fixes.length, 2);
+	assert.equal(applyFixes(text, fixes), "Receive it, then receive it again");
+});
+
+test("expandFix keeps hand-typed replacements verbatim", () => {
+	const text = "recieve it, then Recieve it again";
+	const group = groupIssues(checkText(text, dict))[0];
+	// fromSuggestions=false: the user typed this, so don't re-case it per occurrence.
+	assert.equal(applyFixes(text, expandFix(group, "Receive", false)), "Receive it, then Receive it again");
+	// A choice taken from the suggestion list is re-cased per occurrence.
+	assert.equal(applyFixes(text, expandFix(group, "receive")), "receive it, then Receive it again");
 });

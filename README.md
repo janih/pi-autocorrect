@@ -11,7 +11,7 @@ mistakes, fixes them automatically, or asks for confirmation — your choice.
 | ------ | ------------------------------------------------------------------------- |
 | `warn` | Show possible mistakes with suggestions; send the prompt unchanged (default) |
 | `fix`  | Auto-apply *confident* corrections and report what was changed            |
-| `ask`  | Show a picker for each misspelled word before sending (pick a suggestion, type your own correction, or keep the original) |
+| `ask`  | Show a picker for each *distinct* misspelled word before sending (pick a suggestion, type your own correction, or keep the original); your choice is applied to every occurrence of that word |
 | `off`  | Disabled (status bar shows nothing)                                       |
 
 "Confident" fixes must win their (edit-distance, word-length) group outright,
@@ -34,6 +34,11 @@ skips:
 Possessives are checked via their base (`user's` → `user`), hyphenated
 compounds per part (`well-known`), and suggestions preserve your casing
 (`Recieve → Receive`).
+
+Repeated words are only reported once: the reports list each distinct word with
+a count (`recieve → receive ×3`) and ask mode asks one question per word,
+re-casing the correction per occurrence (`Recieve → Receive`, `recieve →
+receive`).
 
 ## Commands
 
@@ -73,7 +78,7 @@ ln -s /path/to/pi-autocorrect ~/.pi/agent/extensions/pi-autocorrect
 
 ```bash
 npm install        # typescript + pi type definitions
-npm test           # 17 unit tests for the checking engine
+npm test           # 26 unit tests for the checking engine and ask-mode wiring
 npm run typecheck  # tsc --noEmit
 ```
 
